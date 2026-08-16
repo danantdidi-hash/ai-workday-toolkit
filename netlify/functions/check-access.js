@@ -26,6 +26,7 @@ exports.handler = async (event) => {
     return respond(200, renderDenied("We couldn't find an active membership for that email. Double check you typed it exactly as you did at checkout."));
 
   } catch (err) {
+     console.error('check-access error:', err.type || 'unknown', err.message || err);
     return respond(500, renderDenied("Something went wrong checking your membership. Please try again in a moment."));
   }
 };
