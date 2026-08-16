@@ -1,87 +1,61 @@
-const Stripe = require('stripe');
-const crypto = require('crypto');
-
-const SESSION_HOURS = 24; // how long a login stays valid
-
-exports.handler = async (event) => {
-  const stripe = Stripe(process.env.STRIPE_SECRET_KEY);
-  const secret = process.env.SESSION_SECRET;
-
-  if (!secret) {
-    console.error('login error: SESSION_SECRET is not set');
-    return respond(500, 'Server misconfigured. Please try again later.');
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Member Login — AI Workday Toolkit</title>
+<meta name="robots" content="noindex, nofollow">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#dee4d5; --white-card:#fbfaf5; --ink:#23291f; --ink-soft:#545e4c;
+    --forest:#1f3a2e; --stamp-red:#b6392c; --line:#b9c0ac;
   }
-
-  let email = '';
-  try {
-    const contentType = (event.headers['content-type'] || '').toLowerCase();
-    if (contentType.includes('application/json')) {
-      email = (JSON.parse(event.body || '{}').email || '');
-    } else {
-      const params = new URLSearchParams(event.body || '');
-      email = params.get('email') || '';
-    }
-  } catch (e) {
-    email = '';
+  *{ box-sizing:border-box; margin:0; padding:0; }
+  body{
+    background:var(--paper); color:var(--ink); font-family:'Inter', sans-serif;
+    min-height:100vh; display:flex; align-items:center; justify-content:center; padding:24px;
   }
-  email = email.trim().toLowerCase();
-
-  if (!email) {
-    return redirectToLogin('missing_email');
+  .card{
+    background:var(--white-card); border:1px solid var(--line); border-radius:16px;
+    padding:44px 38px; max-width:420px; width:100%;
+    box-shadow:0 24px 50px -30px rgba(31,58,46,.4);
   }
-
-  try {
-    const customers = await stripe.customers.list({ email, limit: 5 });
-    let hasActive = false;
-
-    for (const customer of customers.data) {
-      const active = await stripe.subscriptions.list({ customer: customer.id, status: 'active', limit: 1 });
-      if (active.data.length > 0) { hasActive = true; break; }
-      const trialing = await stripe.subscriptions.list({ customer: customer.id, status: 'trialing', limit: 1 });
-      if (trialing.data.length > 0) { hasActive = true; break; }
-    }
-
-    if (!hasActive) {
-      return redirectToLogin('no_membership');
-    }
-
-    const token = makeToken(email, secret);
-
-    return {
-      statusCode: 302,
-      multiValueHeaders: {
-        'Set-Cookie': [
-          `session=${token}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=${SESSION_HOURS * 3600}`
-        ]
-      },
-      headers: {
-        Location: '/.netlify/functions/check-access'
-      },
-      body: ''
-    };
-
-  } catch (err) {
-    console.error('login error:', err.type || 'unknown', err.message || err);
-    return redirectToLogin('error');
+  .brand{
+    font-family:'IBM Plex Mono', monospace; font-weight:600; font-size:13px; letter-spacing:.04em;
+    display:flex; align-items:center; gap:10px; margin-bottom:26px; text-decoration:none; color:var(--ink);
   }
-};
-
-function makeToken(email, secret) {
-  const emailB64 = Buffer.from(email, 'utf8').toString('base64url');
-  const expiry = Date.now() + SESSION_HOURS * 3600 * 1000;
-  const payload = `${emailB64}.${expiry}`;
-  const signature = crypto.createHmac('sha256', secret).update(payload).digest('base64url');
-  return `${payload}.${signature}`;
-}
-
-function redirectToLogin(reason) {
-  return {
-    statusCode: 302,
-    headers: { Location: `/login.html?error=${reason}` },
-    body: ''
-  };
-}
-
-function respond(statusCode, message) {
-  return { statusCode, headers: { 'Content-Type': 'text/plain' }, body: message };
-}
+  .brand .mark{ width:9px; height:9px; background:var(--stamp-red); display:inline-block; transform:rotate(45deg); }
+  h1{ font-family:'Fraunces', serif; font-weight:600; color:var(--forest); font-size:24px; margin-bottom:10px; }
+  p.sub{ color:var(--ink-soft); font-size:14.5px; margin-bottom:26px; }
+  label{ display:block; font-size:12.5px; font-weight:600; margin-bottom:6px; }
+  input[type=email]{
+    width:100%; border:1px solid var(--line); border-radius:8px; padding:12px 14px;
+    font-size:14.5px; font-family:inherit; margin-bottom:16px;
+  }
+  button{
+    width:100%; background:var(--stamp-red); color:#f4f2e8; border:none; border-radius:8px;
+    padding:14px; font-family:'IBM Plex Mono', monospace; font-weight:600; font-size:14px;
+    letter-spacing:.02em; text-transform:uppercase; cursor:pointer;
+  }
+  button:hover{ opacity:.92; }
+  .fine{ font-size:12px; color:var(--ink-soft); margin-top:16px; text-align:center; }
+  .fine a{ color:var(--forest); }
+</style>
+</head>
+<body>
+  <div class="card">
+    <a class="brand" href="/"><span class="mark"></span> AI WORKDAY TOOLKIT</a>
+    <h1>Welcome back</h1>
+    <p class="sub">Enter the email you used to join. We'll check your membership and take you straight to your tools.</p>
+    <form action="/.netlify/functions/login" method="POST">
+      <label for="email">Email address</label>
+      <input type="email" id="email" name="email" placeholder="you@example.com" required>
+      <button type="submit">Access my tools →</button>
+    </form>
+    <p class="fine">Not a member yet? <a href="/#pricing">Join the toolkit</a></p>
+  </div>
+</body>
+</html>
