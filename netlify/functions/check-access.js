@@ -1,35 +1,64 @@
-const Stripe = require('stripe');
+const crypto = require('crypto');
 
 exports.handler = async (event) => {
-  const stripe = Stripe(process.env.STRIPE_SECRET_KEY);
-  const rawEmail = (event.queryStringParameters && event.queryStringParameters.email) || '';
-  const email = rawEmail.trim().toLowerCase();
+  const secret = process.env.SESSION_SECRET;
+  if (!secret) {
+    console.error('members error: SESSION_SECRET is not set');
+    return respond(500, renderDenied('Server misconfigured. Please try again later.'));
+  }
+
+  const cookies = parseCookies(event.headers.cookie || '');
+  const token = cookies.session;
+
+  const email = token && verifyToken(token, secret);
 
   if (!email) {
-    return respond(200, renderDenied("Please enter an email address."));
+    return {
+      statusCode: 302,
+      headers: { Location: '/login.html?error=session_expired' },
+      body: ''
+    };
+  }
+
+  return respond(200, renderTools());
+};
+
+function verifyToken(token, secret) {
+  const parts = token.split('.');
+  if (parts.length !== 3) return null;
+  const [emailB64, expiryStr, signature] = parts;
+  const payload = `${emailB64}.${expiryStr}`;
+  const expected = crypto.createHmac('sha256', secret).update(payload).digest('base64url');
+
+  const sigBuf = Buffer.from(signature);
+  const expBuf = Buffer.from(expected);
+  if (sigBuf.length !== expBuf.length || !crypto.timingSafeEqual(sigBuf, expBuf)) {
+    return null; // bad signature - tampered or forged
+  }
+
+  const expiry = parseInt(expiryStr, 10);
+  if (!expiry || Date.now() > expiry) {
+    return null; // expired
   }
 
   try {
-    const customers = await stripe.customers.list({ email, limit: 5 });
-    let hasActive = false;
-
-    for (const customer of customers.data) {
-      const active = await stripe.subscriptions.list({ customer: customer.id, status: 'active', limit: 1 });
-      if (active.data.length > 0) { hasActive = true; break; }
-      const trialing = await stripe.subscriptions.list({ customer: customer.id, status: 'trialing', limit: 1 });
-      if (trialing.data.length > 0) { hasActive = true; break; }
-    }
-
-    if (hasActive) {
-      return respond(200, renderTools());
-    }
-    return respond(200, renderDenied("We couldn't find an active membership for that email. Double check you typed it exactly as you did at checkout."));
-
-  } catch (err) {
-     console.error('check-access error:', err.type || 'unknown', err.message || err);
-    return respond(500, renderDenied("Something went wrong checking your membership. Please try again in a moment."));
+    return Buffer.from(emailB64, 'base64url').toString('utf8');
+  } catch (e) {
+    return null;
   }
-};
+}
+
+function parseCookies(header) {
+  const out = {};
+  header.split(';').forEach((pair) => {
+    const idx = pair.indexOf('=');
+    if (idx === -1) return;
+    const key = pair.slice(0, idx).trim();
+    const val = pair.slice(idx + 1).trim();
+    if (key) out[key] = decodeURIComponent(val);
+  });
+  return out;
+}
 
 function respond(statusCode, body) {
   return { statusCode, headers: { 'Content-Type': 'text/html; charset=utf-8' }, body };
@@ -87,7 +116,7 @@ function renderDenied(message) {
       <div class="denied-card">
         <h1>No active membership found</h1>
         <p>${message}</p>
-        <a class="btn" href="/#pricing">View membership</a>
+        <a class="btn" href="/login.html">Back to login</a>
       </div>
     </div>
   `);
@@ -147,4 +176,3 @@ function renderTools() {
   <div class="wrap">Questions or trouble with a tool? Reply to your receipt email and I'll help directly. &nbsp;·&nbsp; <a href="https://workspaceai.net">workspaceai.net</a></div>
 </footer>
   `);
-}
