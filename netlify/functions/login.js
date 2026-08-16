@@ -1,53 +1,28 @@
-const Stripe = require('stripe');
-const crypto = require('crypto');
+exports.handler = async function(event, context) {
+    const backendUrl = process.env.SECRET_TOOL_URL;
 
-const SESSION_HOURS = 24; // how long a login stays valid
+    try {
+        const requestBody = event.body ? JSON.parse(event.body) : {};
 
-exports.handler = async (event) => {
-  const stripe = Stripe(process.env.STRIPE_SECRET_KEY);
-  const secret = process.env.SESSION_SECRET;
+        const response = await fetch(backendUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(requestBody)
+        });
 
-  if (!secret) {
-    console.error('login error: SESSION_SECRET is not set');
-    return respond(500, 'Server misconfigured. Please try again later.');
-  }
+        const data = await response.json();
 
-  // Accept email from a POSTed form (application/x-www-form-urlencoded) or JSON
-  let email = '';
-  try {
-    const contentType = (event.headers['content-type'] || '').toLowerCase();
-    if (contentType.includes('application/json')) {
-      email = (JSON.parse(event.body || '{}').email || '');
-    } else {
-      const params = new URLSearchParams(event.body || '');
-      email = params.get('email') || '';
+        return {
+            statusCode: 200,
+            body: JSON.stringify(data)
+        };
+
+    } catch (error) {
+        return {
+            statusCode: 500,
+            body: JSON.stringify({ error: 'Failed to authenticate with backend' })
+        };
     }
-  } catch (e) {
-    email = '';
-  }
-  email = email.trim().toLowerCase();
-
-  if (!email) {
-    return redirectToLogin('missing_email');
-  }
-
-  try {
-    const customers = await stripe.customers.list({ email, limit: 5 });
-    let hasActive = false;
-
-    for (const customer of customers.data) {
-      const active = await stripe.subscriptions.list({ customer: customer.id, status: 'active', limit: 1 });
-      if (active.data.length > 0) { hasActive = true; break; }
-      const trialing = await stripe.subscriptions.list({ customer: customer.id, status: 'trialing', limit: 1 });
-      if (trialing.data.length > 0) { hasActive = true; break; }
-    }
-
-    if (!hasActive) {
-      return redirectToLogin('no_membership');
-    }
-
-    const token = makeToken(email, secret);
-
-    return {
-      statusCode: 302,
-      multiValueHeaders: {
+};
