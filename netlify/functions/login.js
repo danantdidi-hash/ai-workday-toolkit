@@ -1,29 +1,25 @@
 exports.handler = async function(event, context) {
     try {
-        // Parse the incoming login data (e.g., username/password or email)
         const requestBody = event.body ? JSON.parse(event.body) : {};
-        const { username, password } = requestBody;
+        const { email } = requestBody;
 
-        // --- HARDCODED OR CUSTOM CHECK ---
-        // You can define a simple username/password check right here, 
-        // or customize this logic to fit your membership needs!
-        if (username === "admin" && password === "password123") {
+        // Simple check to ensure an email was entered
+        if (!email) {
             return {
-                statusCode: 200,
-                body: JSON.stringify({ 
-                    success: true, 
-                    message: "Login successful!" 
-                })
-            };
-        } else {
-            return {
-                statusCode: 401,
-                body: JSON.stringify({ 
-                    success: false, 
-                    error: "Invalid username or password" 
-                })
+                statusCode: 400,
+                body: JSON.stringify({ success: false, error: "Email is required" })
             };
         }
+
+        // Allow access for the email entered
+        return {
+            statusCode: 200,
+            body: JSON.stringify({ 
+                success: true, 
+                message: "Access granted!",
+                redirectUrl: "/tools" // Change this to wherever your tools page is located
+            })
+        };
 
     } catch (error) {
         return {
